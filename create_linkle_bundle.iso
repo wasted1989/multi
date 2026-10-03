@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Create a Zip64-compatible, uncompressed Link + Linkle bundle."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+from zipfile import ZIP_STORED, ZipFile
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--stage", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--replace-empty",
+        action="store_true",
+        help="replace only a pre-existing zero-byte incomplete archive",
+    )
+    args = parser.parse_args()
+
+    stage = args.stage.resolve()
+    output = args.output.resolve()
+    if not stage.is_dir():
+        raise FileNotFoundError(stage)
+    if output.exists():
+        if not args.replace_empty or output.stat().st_size != 0:
+            raise FileExistsError(f"refusing to overwrite {output}")
+        output.unlink()
+
+    files = sorted(path for path in stage.rglob("*") if path.is_file())
+    if not files:
+        raise ValueError("bundle folder is empty")
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with ZipFile(output, "x", compression=ZIP_STORED, allowZip64=True) as archive:
+        for index, path in enumerate(files, start=1):
+            archive.write(path, arcname=(Path(stage.name) / path.relative_to(stage)).as_posix())
+            if index == 1 or index % 100 == 0 or index == len(files):
+                print(f"[{index}/{len(files)}] {path.relative_to(stage)}", flush=True)
+    print(f"Created {output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
